@@ -5,18 +5,28 @@ import minecraft::noise;
 
 fn int main(String[] args)
 {
-	random::SimpleRandom* randomSource = mem::alloc(random::SimpleRandom);
-	randomSource.initAuto();
+    random::LegacyRandomSource* randomSource = mem::alloc(random::LegacyRandomSource);
+    randomSource.init(255);
 
-	
+    noise::PerlinNoise* perlin = noise::createLegacyForBlendedNoise(randomSource, -15, 0);
 
-	long noise = noise::createImprovedNoisePtr(randomSource);
+    io::printn("--- Testing PerlinNoise (Octaves -15 to 0) ---");
 
-	io::printfn("Noise value at (%d)", noise);
+    for (int z = 0; z < 5; z++) {
+        for (int x = 0; x < 5; x++) {
+            double scale = 0.5;
+            double noiseValue = perlin.getValue((double)x * scale, 0, (double)z * scale);
+            
+            io::printf("%7.4f ", noiseValue);
+        }
+        io::printn(); 
+    }
 
-	noise::freeImprovedNoisePtr(noise);
+    io::printn("----------------------------------------------");
 
-	noise::ImprovedNoise* noiseSource = noise::getImprovedNoiseFromPtr(noise);
-	io::printn(noiseSource.noise(0, 1, 2));
-	return 0;
+    perlin.free();
+    mem::free(perlin);
+    mem::free(randomSource);
+
+    return 0;
 }

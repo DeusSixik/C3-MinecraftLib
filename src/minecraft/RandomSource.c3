@@ -4,6 +4,7 @@ import std;
 import std::time;
 import std::atomic;
 import std::math;
+import hashing;
 
 const long SEED_UNIQUIFIER = 8682522807148012;
 
@@ -22,6 +23,8 @@ interface RandomSource {
 	fn double nextDouble();
 
 	fn double nextGaussian();
+
+	fn PositionalRandomFactory forkPositional();
 }
 
 <*
@@ -48,8 +51,8 @@ fn int RandomSource.nextIntBetween(RandomSource* self, int min, int max) {
 	return min + self.nextInt(max - min);
 }
 
-const float FLOAT_MULTIPLIER = 5.9604645E-8F;
-const double DOUBLE_MULTIPLIER = 1.110223E-16;
+const float FLOAT_MULTIPLIER = 5.9604644775390625E-8F; 
+const double DOUBLE_MULTIPLIER = 1.1102230246251565E-16;
 
 interface BitRandomSource: RandomSource {
 
@@ -95,6 +98,12 @@ struct LegacyRandomSource(BitRandomSource) {
 	MarsagliaPolarGaussian* gaussianSource;
 }
 
+fn PositionalRandomFactory LegacyRandomSource.forkPositional(LegacyRandomSource* self) @dynamic {
+	LegacyPositionalRandomFactory* factory = mem::alloc(LegacyPositionalRandomFactory);
+	factory.init(self.nextLong());
+	return factory;
+}
+
 fn void LegacyRandomSource.initAuto(LegacyRandomSource* self) {
 	long current_time = (long) time::now(); 
     long generated_seed = current_time ^ SEED_UNIQUIFIER;
@@ -112,7 +121,10 @@ fn void LegacyRandomSource.init(LegacyRandomSource* self, long initial_seed) {
 fn void LegacyRandomSource.setSeed(LegacyRandomSource* self, long seed) @dynamic {
 	seed = (seed ^ 0x5DEECE66DL) & 0xFFFFFFFFFFFFL;
 	self.seed.store(seed);
-	self.gaussianSource.reset();
+
+	if(self.gaussianSource != null) {
+		self.gaussianSource.reset();
+	}
 }
 
 fn int LegacyRandomSource.next(LegacyRandomSource* self, int bits) @dynamic {
@@ -144,7 +156,10 @@ fn int LegacyRandomSource.nextInt(LegacyRandomSource* self, int bound) @dynamic 
 }
 
 fn long LegacyRandomSource.nextLong(LegacyRandomSource* self) @dynamic {
-	return ((long)self.next(32) << 32) + self.next(32);
+    int i = self.next(32);
+    int j = self.next(32);
+    long l = (long)i << 32;
+    return l + (long)j;
 }
 
 fn bool LegacyRandomSource.nextBoolean(LegacyRandomSource* self) @dynamic {
@@ -152,7 +167,10 @@ fn bool LegacyRandomSource.nextBoolean(LegacyRandomSource* self) @dynamic {
 }
 
 fn double LegacyRandomSource.nextDouble(LegacyRandomSource* self) @dynamic {
-	return ((double) ((long)(self.next(26)) << 27 + self.next(27))) * DOUBLE_MULTIPLIER;
+    int i = self.next(26);
+    int j = self.next(27);
+    long l = ((long)i << 27) + (long)j;
+    return (double)l * DOUBLE_MULTIPLIER;
 }
 
 fn float LegacyRandomSource.nextFloat(LegacyRandomSource* self) @dynamic {
@@ -170,6 +188,12 @@ const MASK = 281474976710655L;
 
 struct SimpleRandom(BitRandomSource) {	
 	long seed;
+}
+
+fn PositionalRandomFactory SimpleRandom.forkPositional(SimpleRandom* self) @dynamic {
+	LegacyPositionalRandomFactory* factory = mem::alloc(LegacyPositionalRandomFactory);
+	factory.init(self.nextLong());
+	return factory;
 }
 
 fn void SimpleRandom.initAuto(SimpleRandom* self) {
@@ -226,9 +250,46 @@ fn bool SimpleRandom.nextBoolean(SimpleRandom* self) @dynamic {
 }
 
 fn double SimpleRandom.nextDouble(SimpleRandom* self) @dynamic {
-	return ((double) ((long)(self.next(26)) << 27 + self.next(27))) * DOUBLE_MULTIPLIER;
+	return (double)(((long)self.next(26) << 27) + self.next(27)) * DOUBLE_MULTIPLIER;
 }
 
 fn float SimpleRandom.nextFloat(SimpleRandom* self) @dynamic {
 	return self.next(24) * FLOAT_MULTIPLIER;
+}
+
+interface PositionalRandomFactory {
+
+	fn RandomSource fromHashOf(String input);
+
+	fn RandomSource fromSeed(long seed);
+
+	fn RandomSource at(int x, int y, int z);
+}
+
+struct LegacyPositionalRandomFactory(PositionalRandomFactory) {
+	long seed;
+}
+
+fn void LegacyPositionalRandomFactory.init(LegacyPositionalRandomFactory* self, long seed) {
+	self.seed = seed;
+}
+
+fn RandomSource LegacyPositionalRandomFactory.fromHashOf(LegacyPositionalRandomFactory* self, String input) @dynamic {
+    long hash = hashing::stringToSeed(input);
+    LegacyRandomSource* randomSource = mem::alloc(LegacyRandomSource);
+    randomSource.init(hash); 
+    return (random::RandomSource)randomSource;
+}
+
+fn RandomSource LegacyPositionalRandomFactory.fromSeed(LegacyPositionalRandomFactory* self, long seed) @dynamic {
+	LegacyRandomSource* randomSource = mem::alloc(LegacyRandomSource);
+	randomSource.init(seed);
+	return randomSource;
+}
+
+fn RandomSource LegacyPositionalRandomFactory.at(LegacyPositionalRandomFactory* self, int x, int y, int z) @dynamic {
+	long seed = self.seed + (long)x * 341873128712L + (long)y * 132897987541L + (long)z * 42317861L;
+	LegacyRandomSource* randomSource = mem::alloc(LegacyRandomSource);
+	randomSource.init(seed);
+	return randomSource;
 }
