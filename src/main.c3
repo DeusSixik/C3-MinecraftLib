@@ -5,6 +5,5 @@ import minecraft::noise;
 
 fn int main(String[] args)
 {
-
     return 0;
 }

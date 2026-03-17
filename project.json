@@ -31,7 +31,7 @@
   "targets": {
     "c3_minecraft": {
       // Executable or library.
-      "type": "executable",
+      "type": "dynamic-lib",
       // Additional libraries, sources
       // and overrides of global settings here.
     },
