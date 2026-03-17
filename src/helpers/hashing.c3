@@ -8,3 +8,11 @@ fn long stringToSeed(char[] input) {
     }
     return (long)hash;
 }
+
+fn int javaHashCode(String s) {
+    int h = 0;
+    for (int i = 0; i < s.len; i++) {
+        h = 31 * h + (int)s[i];
+    }
+    return h;
+}

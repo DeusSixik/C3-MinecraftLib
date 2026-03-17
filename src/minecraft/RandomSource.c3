@@ -141,7 +141,7 @@ fn double LegacyRandomSource.nextGaussian(LegacyRandomSource* self) @dynamic {
 <*
 	@require bound > 0
 *>
-fn int LegacyRandomSource.nextInt(LegacyRandomSource* self, int bound) @dynamic {
+fn int LegacyRandomSource.nextInt(LegacyRandomSource* self, int bound = 0) @dynamic {
 	if ((bound & (bound - 1)) == 0) {
 		return (int)((bound * (long)self.next(31)) >> 31);
 	}
@@ -179,6 +179,30 @@ fn float LegacyRandomSource.nextFloat(LegacyRandomSource* self) @dynamic {
 
 fn void LegacyRandomSource.free(LegacyRandomSource* self) {
 	mem::free(self.gaussianSource);
+}
+
+<*
+	@require max > min
+*>
+fn int LegacyRandomSource.nextIntBetweenInclusive(LegacyRandomSource* self, int min, int max) {
+	int range = max - min + 1;
+	return self.nextInt(range) + min;
+}
+
+fn double LegacyRandomSource.triangle(LegacyRandomSource* self, double value1, double value2) {
+	return value1 + value2 * (self.nextDouble() - self.nextDouble()); 
+}
+
+fn void LegacyRandomSource.consumeCount(LegacyRandomSource* self, int count) {
+	for (int i = 0; i < count; i++) {
+		self.nextInt();
+	}
+}
+<*
+	@require max > min
+*>
+fn int LegacyRandomSource.nextIntBetween(LegacyRandomSource* self, int min, int max) {
+	return min + self.nextInt(max - min);
 }
 
 const MULTIPLIER = 25214903917L;
@@ -275,9 +299,10 @@ fn void LegacyPositionalRandomFactory.init(LegacyPositionalRandomFactory* self, 
 }
 
 fn RandomSource LegacyPositionalRandomFactory.fromHashOf(LegacyPositionalRandomFactory* self, String input) @dynamic {
-    long hash = hashing::stringToSeed(input);
+    int h = hashing::javaHashCode(input);
+    long mixedSeed = (long)h ^ self.seed;
     LegacyRandomSource* randomSource = mem::alloc(LegacyRandomSource);
-    randomSource.init(hash); 
+    randomSource.init(mixedSeed); 
     return (random::RandomSource)randomSource;
 }
 

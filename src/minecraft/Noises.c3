@@ -238,6 +238,19 @@ fn void skipOctave(random::RandomSource randomSource) {
     randomSource.consumeCount(262);
 }
 
+
+fn double clampedLerp(double a, double b, double t) @inline {
+    if (t < 0.0) return a;
+    if (t > 1.0) return b;
+    return lerp(t, a, b);
+}
+
+fn ImprovedNoise* PerlinNoise.getOctaveNoise(PerlinNoise* self, int i) {
+    int idx = self.noiseLevels.len - 1 - i;
+    if (idx < 0 || idx >= self.noiseLevels.len) return null;
+    return self.noiseLevels[idx];
+}
+
 fn double PerlinNoise.edgeValue(PerlinNoise* self, double d) {
     double e = 0.0;
     double f = self.lowestFreqValueFactor;
@@ -302,9 +315,7 @@ fn void PerlinNoise.init(PerlinNoise* self, random::RandomSource randomSource, i
             }
             
             int l = self.firstOctave + k;
-            
             char[32] buffer;
-
             char[] hashNameSlice = io::bprintf(&buffer, "octave_%d", l)!!;
             
             random::RandomSource octaveRandom = factory.fromHashOf((String)hashNameSlice);
@@ -313,8 +324,13 @@ fn void PerlinNoise.init(PerlinNoise* self, random::RandomSource randomSource, i
             newNoise.init(octaveRandom);
             self.noiseLevels[k] = newNoise;
             
-			mem::free(octaveRandom.ptr); 
+          
+	         random::LegacyRandomSource* lrs = (random::LegacyRandomSource*)octaveRandom.ptr;
+            lrs.free();
+            mem::free(lrs);
         }
+
+        mem::free(factory.ptr);
         
     } else {
         ImprovedNoise* baseNoise = mem::alloc(ImprovedNoise);
@@ -440,5 +456,485 @@ fn PerlinNoise* createFromOctavesList(random::RandomSource randomSource, int[] o
 fn PerlinNoise* createFromAmplitudes(random::RandomSource randomSource, int firstOctave, double[] amplitudes) {
     PerlinNoise* noise = mem::alloc(PerlinNoise);
     noise.init(randomSource, firstOctave, amplitudes, true);
+    return noise;
+}
+
+//////////////////////////////////////////
+////	NORMAL NOISE				  ////
+//////////////////////////////////////////
+
+const double NORMAL_NOISE_INPUT_FACTOR = 1.0181268882175227;
+const double NORMAL_NOISE_TARGET_DEVIATION = 0.3333333333333333; 
+
+struct NoiseParameters {
+    int firstOctave;
+    double[] amplitudes;
+}
+
+struct NormalNoise {
+    double valueFactor;
+    PerlinNoise* first;
+    PerlinNoise* second;
+    double maxValue;
+    NoiseParameters parameters;
+}
+
+fn double expectedDeviation(int i) @inline {
+    return 0.1 * (1.0 + 1.0 / (double)(i + 1));
+}
+
+fn double NormalNoise.getValue(NormalNoise* self, double x, double y, double z) {
+    double x2 = x * NORMAL_NOISE_INPUT_FACTOR;
+    double y2 = y * NORMAL_NOISE_INPUT_FACTOR;
+    double z2 = z * NORMAL_NOISE_INPUT_FACTOR;
+    
+    return (self.first.getValue(x, y, z) + self.second.getValue(x2, y2, z2)) * self.valueFactor;
+}
+
+fn void NormalNoise.init(NormalNoise* self, random::RandomSource randomSource, NoiseParameters parameters, bool usePositional) {
+    self.parameters.firstOctave = parameters.firstOctave;
+    
+    self.parameters.amplitudes = mem::new_array(double, parameters.amplitudes.len);
+    mem::copy(self.parameters.amplitudes.ptr, parameters.amplitudes.ptr, parameters.amplitudes.len * double.sizeof);
+    
+    int i = self.parameters.firstOctave;
+    double[] amplitudes = self.parameters.amplitudes;
+    
+
+    if (usePositional) {
+        self.first = createFromAmplitudes(randomSource, i, amplitudes);
+        self.second = createFromAmplitudes(randomSource, i, amplitudes);
+    } else {
+        self.first = createLegacyForLegacyNetherBiome(randomSource, i, amplitudes);
+        self.second = createLegacyForLegacyNetherBiome(randomSource, i, amplitudes);
+    }
+    
+
+    int j = 0x7FFFFFFF;
+    int k = -0x7FFFFFFF - 1;
+    
+    for (int l = 0; l < amplitudes.len; l++) {
+        double d = amplitudes[l];
+        if (d != 0.0) {
+            if (l < j) j = l;
+            if (l > k) k = l;
+        }
+    }
+    
+    self.valueFactor = 0.16666666666666666 / expectedDeviation(k - j);
+    self.maxValue = (self.first.maxValue + self.second.maxValue) * self.valueFactor;
+}
+
+fn void NormalNoise.free(NormalNoise* self) {
+    if (self.first != null) {
+        self.first.free();
+        mem::free(self.first);
+    }
+    if (self.second != null) {
+        self.second.free();
+        mem::free(self.second);
+    }
+    
+    mem::free(self.parameters.amplitudes.ptr);
+}
+
+fn NormalNoise* createNormalNoise(random::RandomSource randomSource, NoiseParameters parameters) {
+    NormalNoise* noise = mem::alloc(NormalNoise);
+    noise.init(randomSource, parameters, true);
+    return noise;
+}
+
+fn NormalNoise* createLegacyNormalNoise(random::RandomSource randomSource, NoiseParameters parameters) {
+    NormalNoise* noise = mem::alloc(NormalNoise);
+    noise.init(randomSource, parameters, false);
+    return noise;
+}
+
+fn NormalNoise* createNormalNoiseFromSlice(random::RandomSource randomSource, int firstOctave, double[] amplitudes) {
+    NoiseParameters params;
+    params.firstOctave = firstOctave;
+    params.amplitudes = amplitudes;
+    
+    NormalNoise* noise = mem::alloc(NormalNoise);
+    noise.init(randomSource, params, true);
+    return noise;
+}
+
+//////////////////////////////////////////
+////	BLENDED NOISE				  ////
+//////////////////////////////////////////
+
+struct BlendedNoise {
+    PerlinNoise* minLimitNoise;
+    PerlinNoise* maxLimitNoise;
+    PerlinNoise* mainNoise;
+    
+    double xzScale;
+    double yScale;
+    double xzFactor;
+    double yFactor;
+    double smearScaleMultiplier;
+    
+    double xzMultiplier;
+    double yMultiplier;
+    double maxValue;
+}
+
+fn BlendedNoise* createBlendedNoise(random::RandomSource randomSource, double xzScale, double yScale, double xzFactor, double yFactor, double smearScaleMultiplier) {
+    BlendedNoise* self = mem::alloc(BlendedNoise);
+    
+    self.minLimitNoise = createLegacyForBlendedNoise(randomSource, -15, 0);
+    self.maxLimitNoise = createLegacyForBlendedNoise(randomSource, -15, 0);
+    self.mainNoise = createLegacyForBlendedNoise(randomSource, -7, 0);
+    
+    self.xzScale = xzScale;
+    self.yScale = yScale;
+    self.xzFactor = xzFactor;
+    self.yFactor = yFactor;
+    self.smearScaleMultiplier = smearScaleMultiplier;
+    
+    self.xzMultiplier = 684.412 * self.xzScale;
+    self.yMultiplier = 684.412 * self.yScale;
+    
+    self.maxValue = self.minLimitNoise.maxBrokenValue(self.yMultiplier);
+    
+    return self;
+}
+
+fn void BlendedNoise.free(BlendedNoise* self) {
+    if (self.minLimitNoise != null) {
+        self.minLimitNoise.free();
+        mem::free(self.minLimitNoise);
+    }
+    if (self.maxLimitNoise != null) {
+        self.maxLimitNoise.free();
+        mem::free(self.maxLimitNoise);
+    }
+    if (self.mainNoise != null) {
+        self.mainNoise.free();
+        mem::free(self.mainNoise);
+    }
+}
+
+fn double BlendedNoise.compute(BlendedNoise* self, int blockX, int blockY, int blockZ) {
+    double d = (double)blockX * self.xzMultiplier;
+    double e = (double)blockY * self.yMultiplier;
+    double f = (double)blockZ * self.xzMultiplier;
+    
+    double g = d / self.xzFactor;
+    double h = e / self.yFactor;
+    double i = f / self.xzFactor;
+    
+    double j = self.yMultiplier * self.smearScaleMultiplier;
+    double k = j / self.yFactor;
+    
+    double l = 0.0;
+    double m = 0.0;
+    double n = 0.0;
+    double o = 1.0;
+    
+    for (int p = 0; p < 8; p++) {
+        ImprovedNoise* improvedNoise = self.mainNoise.getOctaveNoise(p);
+        if (improvedNoise != null) {
+            n += improvedNoise.noise(wrap(g * o), wrap(h * o), wrap(i * o), k * o, h * o) / o;
+        }
+        o /= 2.0;
+    }
+    
+    double q = (n / 10.0 + 1.0) / 2.0;
+    bool bl2 = q >= 1.0;
+    bool bl3 = q <= 0.0;
+    o = 1.0;
+    
+    for (int r = 0; r < 16; r++) {
+        double s = wrap(d * o);
+        double t = wrap(e * o);
+        double u = wrap(f * o);
+        double v = j * o;
+        
+        if (!bl2) {
+            ImprovedNoise* improvedNoise2 = self.minLimitNoise.getOctaveNoise(r);
+            if (improvedNoise2 != null) {
+                l += improvedNoise2.noise(s, t, u, v, e * o) / o;
+            }
+        }
+        
+        if (!bl3) {
+            ImprovedNoise* improvedNoise2 = self.maxLimitNoise.getOctaveNoise(r);
+            if (improvedNoise2 != null) {
+                m += improvedNoise2.noise(s, t, u, v, e * o) / o;
+            }
+        }
+        o /= 2.0;
+    }
+    
+    return clampedLerp(l / 512.0, m / 512.0, q) / 128.0;
+}
+
+
+//////////////////////////////////////////
+////	SIMPLEX NOISE		          ////
+//////////////////////////////////////////
+
+const double SIMPLEX_SQRT_3 = 1.7320508075688772;
+const double SIMPLEX_F2 = 0.3660254037844386;    
+const double SIMPLEX_G2 = 0.21132486540518713;   
+
+struct SimplexNoise {
+    int[512] p;
+    double xo;
+    double yo;
+    double zo;
+}
+
+fn void SimplexNoise.init(SimplexNoise* self, random::RandomSource seed) {
+    self.xo = seed.nextDouble() * 256.0;
+    self.yo = seed.nextDouble() * 256.0;
+    self.zo = seed.nextDouble() * 256.0;
+    
+    for (int i = 0; i < 256; i++) {
+        self.p[i] = i;
+    }
+    
+    for (int i = 0; i < 256; i++) {
+        int j = seed.nextInt(256 - i);
+        int k = self.p[i];
+        self.p[i] = self.p[j + i];
+        self.p[j + i] = k;
+    }
+}
+
+fn int SimplexNoise.getP(SimplexNoise* self, int i) @inline {
+    return self.p[i & 0xFF];
+}
+
+fn double SimplexNoise.getCornerNoise3D(SimplexNoise* self, int i, double d, double e, double f, double g) @inline {
+    double h = g - d * d - e * e - f * f;
+    if (h < 0.0) {
+        return 0.0;
+    }
+    h *= h;
+	
+    return h * h * dot(&GRADIENT[i], d, e, f);
+}
+
+fn double SimplexNoise.getValue2D(SimplexNoise* self, double d, double e) {
+    double f = (d + e) * SIMPLEX_F2;
+    int i = fastFloor(d + f);
+    int j = fastFloor(e + f);
+    
+    double g = (double)(i + j) * SIMPLEX_G2;
+    double h = (double)i - g;
+    double l = d - h;
+    
+    double k = (double)j - g;
+    double m = e - k;
+    
+    int n;
+    int o;
+    if (l > m) {
+        n = 1;
+        o = 0;
+    } else {
+        n = 0;
+        o = 1;
+    }
+    
+    double p = l - (double)n + SIMPLEX_G2;
+    double q = m - (double)o + SIMPLEX_G2;
+    double r = l - 1.0 + 2.0 * SIMPLEX_G2;
+    double s = m - 1.0 + 2.0 * SIMPLEX_G2;
+    
+    int t = i & 0xFF;
+    int u = j & 0xFF;
+    
+    int v = self.getP(t + self.getP(u)) % 12;
+    int w = self.getP(t + n + self.getP(u + o)) % 12;
+    int x = self.getP(t + 1 + self.getP(u + 1)) % 12;
+    
+    double y = self.getCornerNoise3D(v, l, m, 0.0, 0.5);
+    double z = self.getCornerNoise3D(w, p, q, 0.0, 0.5);
+    double aa = self.getCornerNoise3D(x, r, s, 0.0, 0.5);
+    
+    return 70.0 * (y + z + aa);
+}
+
+fn double SimplexNoise.getValue3D(SimplexNoise* self, double d, double e, double f) {
+    double g = 0.3333333333333333; // 1/3
+    double h = (d + e + f) * g;
+    
+    int i = fastFloor(d + h);
+    int j = fastFloor(e + h);
+    int k = fastFloor(f + h);
+    
+    double l = 0.16666666666666666; // 1/6
+    double m = (double)(i + j + k) * l;
+    
+    double n = (double)i - m;
+    double o = (double)j - m;
+    double p = (double)k - m;
+    
+    double q = d - n;
+    double r = e - o;
+    double s = f - p;
+    
+    int t, u, v, w, x, y;
+    
+    if (q >= r) {
+        if (r >= s) {
+            t = 1; u = 0; v = 0; w = 1; x = 1; y = 0;
+        } else if (q >= s) {
+            t = 1; u = 0; v = 0; w = 1; x = 0; y = 1;
+        } else {
+            t = 0; u = 0; v = 1; w = 1; x = 0; y = 1;
+        }
+    } else if (r < s) {
+        t = 0; u = 0; v = 1; w = 0; x = 1; y = 1;
+    } else if (q < s) {
+        t = 0; u = 1; v = 0; w = 0; x = 1; y = 1;
+    } else {
+        t = 0; u = 1; v = 0; w = 1; x = 1; y = 0;
+    }
+    
+    double z = q - (double)t + l;
+    double aa = r - (double)u + l;
+    double ab = s - (double)v + l;
+    
+    double ac = q - (double)w + g;
+    double ad = r - (double)x + g;
+    double ae = s - (double)y + g;
+    
+    double af = q - 1.0 + 0.5;
+    double ag = r - 1.0 + 0.5;
+    double ah = s - 1.0 + 0.5;
+    
+    int ai = i & 0xFF;
+    int aj = j & 0xFF;
+    int ak = k & 0xFF;
+    
+    int al = self.getP(ai + self.getP(aj + self.getP(ak))) % 12;
+    int am = self.getP(ai + t + self.getP(aj + u + self.getP(ak + v))) % 12;
+    int an = self.getP(ai + w + self.getP(aj + x + self.getP(ak + y))) % 12;
+    int ao = self.getP(ai + 1 + self.getP(aj + 1 + self.getP(ak + 1))) % 12;
+    
+    double ap = self.getCornerNoise3D(al, q, r, s, 0.6);
+    double aq = self.getCornerNoise3D(am, z, aa, ab, 0.6);
+    double ar = self.getCornerNoise3D(an, ac, ad, ae, 0.6);
+    double as = self.getCornerNoise3D(ao, af, ag, ah, 0.6);
+    
+    return 32.0 * (ap + aq + ar + as);
+}
+
+//////////////////////////////////////////
+////	PERLIN SIMPLEX NOISE		  ////
+//////////////////////////////////////////
+
+fn bool containsInt(int[] array, int value) {
+    for (int i = 0; i < array.len; i++) {
+        if (array[i] == value) return true;
+    }
+    return false;
+}
+
+struct PerlinSimplexNoise {
+    SimplexNoise*[] noiseLevels;
+    double highestFreqValueFactor;
+    double highestFreqInputFactor;
+}
+
+fn void PerlinSimplexNoise.init(PerlinSimplexNoise* self, random::RandomSource randomSource, int[] octaves) {
+    int firstInt = octaves[0];
+    int lastInt = octaves[0];
+    for (int idx = 1; idx < octaves.len; idx++) {
+        if (octaves[idx] < firstInt) firstInt = octaves[idx];
+        if (octaves[idx] > lastInt) lastInt = octaves[idx];
+    }
+    
+    int i = -firstInt;
+    int j = lastInt;
+    int k = i + j + 1;
+    
+    SimplexNoise* simplexNoise = mem::alloc(SimplexNoise);
+    simplexNoise.init(randomSource);
+    
+    int l = j;
+    self.noiseLevels = mem::new_array(SimplexNoise*, k);
+    mem::clear(self.noiseLevels.ptr, k * (SimplexNoise*).sizeof);
+    
+    bool simplexStored = false;
+    
+    if (l >= 0 && l < k && containsInt(octaves, 0)) {
+        self.noiseLevels[l] = simplexNoise;
+        simplexStored = true;
+    }
+    
+    for (int m = l + 1; m < k; m++) {
+        if (m >= 0 && containsInt(octaves, l - m)) {
+            SimplexNoise* newNoise = mem::alloc(SimplexNoise);
+            newNoise.init(randomSource);
+            self.noiseLevels[m] = newNoise;
+        } else {
+            randomSource.consumeCount(262);
+        }
+    }
+    
+    if (j > 0) {
+        double noiseVal = simplexNoise.getValue3D(simplexNoise.xo, simplexNoise.yo, simplexNoise.zo);
+        long n = (long)(noiseVal * 9.223372036854776E18);
+        
+        random::LegacyRandomSource* randomSource2 = mem::alloc(random::LegacyRandomSource);
+        randomSource2.init(n);
+        
+        for (int o = l - 1; o >= 0; o--) {
+            if (o < k && containsInt(octaves, l - o)) {
+                SimplexNoise* newNoise = mem::alloc(SimplexNoise);
+                newNoise.init(randomSource2);
+                self.noiseLevels[o] = newNoise;
+            } else {
+                randomSource2.consumeCount(262);
+            }
+        }
+        mem::free(randomSource2);
+    }
+    
+    if (!simplexStored) {
+        mem::free(simplexNoise);
+    }
+    
+    self.highestFreqInputFactor = math::pow(2.0, (double)j);
+    self.highestFreqValueFactor = 1.0 / (math::pow(2.0, (double)k) - 1.0);
+}
+
+fn void PerlinSimplexNoise.free(PerlinSimplexNoise* self) {
+    for (int idx = 0; idx < self.noiseLevels.len; idx++) {
+        if (self.noiseLevels[idx] != null) {
+            mem::free(self.noiseLevels[idx]);
+        }
+    }
+    mem::free(self.noiseLevels.ptr);
+}
+
+fn double PerlinSimplexNoise.getValue(PerlinSimplexNoise* self, double d, double e, bool bl) {
+    double f = 0.0;
+    double g = self.highestFreqInputFactor;
+    double h = self.highestFreqValueFactor;
+    
+    for (int idx = 0; idx < self.noiseLevels.len; idx++) {
+        SimplexNoise* simplexNoise = self.noiseLevels[idx];
+        if (simplexNoise != null) {
+            double x = d * g + (bl ? simplexNoise.xo : 0.0);
+            double y = e * g + (bl ? simplexNoise.yo : 0.0);
+            
+            f += simplexNoise.getValue2D(x, y) * h;
+        }
+        g /= 2.0;
+        h *= 2.0;
+    }
+    return f;
+}
+
+fn PerlinSimplexNoise* createPerlinSimplexNoise(random::RandomSource randomSource, int[] octaves) {
+    PerlinSimplexNoise* noise = mem::alloc(PerlinSimplexNoise);
+    noise.init(randomSource, octaves);
     return noise;
 }
