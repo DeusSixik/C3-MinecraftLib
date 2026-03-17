@@ -1,8 +1,11 @@
 module minecraft::random;
 
 import std;
+import std::time;
 import std::atomic;
 import std::math;
+
+const long SEED_UNIQUIFIER = 8682522807148012;
 
 interface RandomSource {
 
@@ -54,12 +57,12 @@ interface BitRandomSource: RandomSource {
 }
 
 struct MarsagliaPolarGaussian {
-	RandomSource* source;
+	RandomSource source;
 	double nextNextGaussian;
 	bool haveNextNextGaussian;
 }
 
-fn void MarsagliaPolarGaussian.init(MarsagliaPolarGaussian* self, RandomSource* source) {
+fn void MarsagliaPolarGaussian.init(MarsagliaPolarGaussian* self, RandomSource source) {
 	self.source = source;
 	self.haveNextNextGaussian = false;
 }
@@ -92,11 +95,17 @@ struct LegacyRandomSource(BitRandomSource) {
 	MarsagliaPolarGaussian* gaussianSource;
 }
 
+fn void LegacyRandomSource.initAuto(LegacyRandomSource* self) {
+	long current_time = (long) time::now(); 
+    long generated_seed = current_time ^ SEED_UNIQUIFIER;
+    self.init(generated_seed);
+}
+
 fn void LegacyRandomSource.init(LegacyRandomSource* self, long initial_seed) {
 	self.setSeed(initial_seed);
 
 	MarsagliaPolarGaussian* gaussian = mem::alloc(MarsagliaPolarGaussian);
-	gaussian.init((RandomSource*)self);
+	gaussian.init(self);
 	self.gaussianSource = gaussian;
 }
 
@@ -150,14 +159,23 @@ fn float LegacyRandomSource.nextFloat(LegacyRandomSource* self) @dynamic {
 	return self.next(24) * FLOAT_MULTIPLIER;
 }
 
+fn void LegacyRandomSource.free(LegacyRandomSource* self) {
+	mem::free(self.gaussianSource);
+}
+
 const MULTIPLIER = 25214903917L;
 const ADDEND = 11L;
 const BITS = 48;
 const MASK = 281474976710655L;
 
 struct SimpleRandom(BitRandomSource) {	
-	MarsagliaPolarGaussian* gaussianSource;
 	long seed;
+}
+
+fn void SimpleRandom.initAuto(SimpleRandom* self) {
+	long current_time = (long) time::now(); 
+    long generated_seed = current_time ^ SEED_UNIQUIFIER;
+    self.init(generated_seed);
 }
 
 fn void SimpleRandom.init(SimpleRandom* self, long initial_seed) {
@@ -174,7 +192,8 @@ fn int SimpleRandom.next(SimpleRandom* self, int bits) @dynamic {
 }
 
 fn long SimpleRandom.advanceSeed(SimpleRandom* self) {
-	return self.seed = self.seed * MULTIPLIER + ADDEND & MASK;
+    self.seed = ((self.seed * MULTIPLIER) + ADDEND) & MASK;
+    return self.seed;
 }
 
 fn double SimpleRandom.nextGaussian(SimpleRandom* self) @dynamic {
@@ -182,11 +201,20 @@ fn double SimpleRandom.nextGaussian(SimpleRandom* self) @dynamic {
 }
 
 <*
-	@require bits > 0
+    @require bound > 0
 *>
-fn int SimpleRandom.nextInt(SimpleRandom* self, int bits) @dynamic {
-    long shifted = self.advanceSeed() >> (48 - bits);
-	return (int)shifted;
+fn int SimpleRandom.nextInt(SimpleRandom* self, int bound) @dynamic {
+    if ((bound & (bound - 1)) == 0) {
+        return (int)((bound * (long)self.next(31)) >> 31);
+    }
+
+    int bits, val;
+    do {
+        bits = self.next(31);
+        val = bits % bound;
+    } while (bits - val + (bound - 1) < 0);
+
+    return val;
 }
 
 fn long SimpleRandom.nextLong(SimpleRandom* self) @dynamic {

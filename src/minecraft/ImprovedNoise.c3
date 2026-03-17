@@ -1,4 +1,5 @@
 module minecraft::noise;
+import minecraft::random;
 import std;
 
 alias Byte = char;
@@ -166,4 +167,42 @@ fn double ImprovedNoise.noiseWithDerivative(ImprovedNoise* self, double x, doubl
     double o = i - (double)l;
 
     return self.sampleWithDerivative(j, k, l, m, n, o, ds);
+}
+
+fn void ImprovedNoise.init(ImprovedNoise* self, random::RandomSource seed) {
+	self.xo = seed.nextDouble() * 256.0;
+	self.yo = seed.nextDouble() * 256.0;
+	self.zo = seed.nextDouble() * 256.0;
+
+	for (int i = 0; i < 256; i++) {
+		self.p[i] = (Byte)i;
+	}
+
+	for (int i = 255; i > 0; i--) {
+		int j = (int)(seed.nextDouble() * (double)(i + 1)); 
+		
+		Byte temp = self.p[i];
+		self.p[i] = self.p[j];
+		self.p[j] = temp;
+	}
+}
+
+fn long createImprovedNoisePtr(random::RandomSource randomSource) {
+	ImprovedNoise* noise = mem::alloc(ImprovedNoise);
+	noise.init(randomSource);
+	return (long)noise;
+}
+
+<*
+    @require ptr != 0
+*>
+fn ImprovedNoise* getImprovedNoiseFromPtr(long ptr) {
+	return (ImprovedNoise*)ptr;
+}
+
+<*
+    @require ptr != 0
+*>
+fn void freeImprovedNoisePtr(long ptr) {
+	mem::free((ImprovedNoise*)ptr);
 }
