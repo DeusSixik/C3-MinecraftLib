@@ -14,7 +14,8 @@ alias DefineClassFunc = fn Jclass(JNIEnv, char*, Jobject, Jbyte*, Jsize);
 alias FindClassFunc = fn Jclass(JNIEnv, char*);
 alias GetDoubleArrayElementsFunc = fn double*(JNIEnv, Jobject, Jboolean*);
 alias ReleaseDoubleArrayElementsFunc = fn void(JNIEnv, Jobject, double*, Jint);
-alias GetDirectBufferAddressFunc = fn void*(JNIEnv, Jobject);
+alias GetArrayLengthFunc = fn Jsize(JNIEnv, Jobject);
+alias GetDoubleArrayRegionFunc = fn void(JNIEnv, Jobject, Jsize, Jsize, double*);
 
 struct JNINativeInterface {
     void* reserved0;
@@ -26,14 +27,22 @@ struct JNINativeInterface {
     DefineClassFunc defineClass;
     FindClassFunc findClass;
 
-	void*[183] _padding1;
+    // 164 отступа между findClass (индекс 6) и getArrayLength (индекс 171)
+    void*[164] _padding1_a; 
 
-	GetDoubleArrayElementsFunc getDoubleArrayElements;
+    GetArrayLengthFunc getArrayLength;
 
-	void*[7] _padding2;
+    // 18 отступов между getArrayLength и getDoubleArrayElements (индекс 190)
+    void*[18] _padding1_b; 
+
+    GetDoubleArrayElementsFunc getDoubleArrayElements;
+
+    void*[7] _padding2;
     ReleaseDoubleArrayElementsFunc releaseDoubleArrayElements;
-    
-    GetDirectBufferAddressFunc getDirectBufferAddress;
+
+	void*[7] _padding3;
+
+	GetDoubleArrayRegionFunc getDoubleArrayRegion;
 }
 
 fn Jint JNINativeInterface.getVersion2(JNINativeInterface* self) {
@@ -53,3 +62,6 @@ fn void JNINativeInterface.releaseDoubleArray(JNINativeInterface* self, Jobject 
     self.releaseDoubleArrayElements((JNIEnv)&self, array, elems, 0);
 }
 
+// fn Jsize JNINativeInterface.getArrayLength(JNINativeInterface* self, Jobject array) {
+//     return self.getArrayLength2((JNIEnv)&self, array);
+// }

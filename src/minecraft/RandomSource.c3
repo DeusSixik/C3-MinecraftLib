@@ -178,7 +178,9 @@ fn float LegacyRandomSource.nextFloat(LegacyRandomSource* self) @dynamic {
 }
 
 fn void LegacyRandomSource.free(LegacyRandomSource* self) {
-	mem::free(self.gaussianSource);
+	if(self.gaussianSource != null) {
+		mem::free(self.gaussianSource);
+	}
 }
 
 <*

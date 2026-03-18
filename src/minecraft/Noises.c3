@@ -496,7 +496,7 @@ fn void NormalNoise.init(NormalNoise* self, random::RandomSource randomSource, N
     
     self.parameters.amplitudes = mem::new_array(double, parameters.amplitudes.len);
     mem::copy(self.parameters.amplitudes.ptr, parameters.amplitudes.ptr, parameters.amplitudes.len * double.sizeof);
-    
+
     int i = self.parameters.firstOctave;
     double[] amplitudes = self.parameters.amplitudes;
     
@@ -526,7 +526,7 @@ fn void NormalNoise.init(NormalNoise* self, random::RandomSource randomSource, N
 }
 
 fn void NormalNoise.free(NormalNoise* self) {
-    if (self.first != null) {
+if (self.first != null) {
         self.first.free();
         mem::free(self.first);
     }
@@ -534,8 +534,10 @@ fn void NormalNoise.free(NormalNoise* self) {
         self.second.free();
         mem::free(self.second);
     }
-    
-    mem::free(self.parameters.amplitudes.ptr);
+
+    if (self.parameters.amplitudes.ptr != null) {
+        mem::free(self.parameters.amplitudes.ptr);
+    }
 }
 
 fn NormalNoise* createNormalNoise(random::RandomSource randomSource, NoiseParameters parameters) {
@@ -552,8 +554,9 @@ fn NormalNoise* createLegacyNormalNoise(random::RandomSource randomSource, Noise
 
 fn NormalNoise* createNormalNoiseFromSlice(random::RandomSource randomSource, int firstOctave, double[] amplitudes) {
     NoiseParameters params;
+    
     params.firstOctave = firstOctave;
-    params.amplitudes = amplitudes;
+    mem::copy(params.amplitudes.ptr, amplitudes.ptr, amplitudes.len * double.sizeof);
     
     NormalNoise* noise = mem::alloc(NormalNoise);
     noise.init(randomSource, params, true);

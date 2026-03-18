@@ -22,9 +22,13 @@ fn long createLegacyRandomSourceAuto(jni::JNIEnv env, jni::Jobject obj)
 fn void destroyLegacyRandomSource(jni::JNIEnv env, jni::Jobject obj, long ptr)
 	@export("Java_dev_sixik_generator_1accelerator_math_c3_NativeRandom_destroyLegacyRandomSource")
 {
-	random::LegacyRandomSource* randomSource = (random::LegacyRandomSource*)ptr;
-	randomSource.free();
-	mem::free(randomSource);
+	if(ptr != 0) {
+		random::LegacyRandomSource* randomSource = (random::LegacyRandomSource*)ptr;
+		if(randomSource != null) {
+			randomSource.free();
+			mem::free(randomSource);
+		}
+	}
 }
 
 fn void setSeedLegacyRandomSource(jni::JNIEnv env, jni::Jobject obj, long ptr, long seed)
