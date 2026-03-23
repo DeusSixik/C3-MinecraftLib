@@ -57,6 +57,9 @@ fn long atomicUpdateAndGet(Atomic{long} a, long multiplier, long addend, long ma
     return new_val;
 }
 
-fn long long_rotateLeft(long i, int distance) {
-	return (i << distance) | ((long)((ulong) i >> -distance));
+fn long long_rotateLeft(long i, int distance) @inline {
+    int shift = distance & 63;
+    int inv_shift = (-distance) & 63;
+    
+    return (i << shift) | ((long)((ulong)i >> inv_shift));
 }

@@ -4,7 +4,7 @@ import std;
 import minecraft::mth;
 import minecraft::random_support;
 
-enum RandomType {
+enum RandomType : int {
 	LEGACY,
 	XOROSHIRO
 }
@@ -185,10 +185,10 @@ fn void LegacyRandomSource.setSeed(LegacyRandomSource* self, long seed) @dynamic
 } 
 
 fn int LegacyRandomSource.next(LegacyRandomSource* self, int value) @dynamic {
-	long i = self.seed.data;
-	long m = i * LEGACY_RANDOM_MULTIPLIER + LEGACY_RANDOM_INCREMENT & LEGACY_RANDOM_MODULUS_MASK;
-	self.seed.store(m);
-	return (int) (m >> 48 - i);	
+	long oldseed = self.seed.load();
+    long nextseed = (oldseed * LEGACY_RANDOM_MULTIPLIER + LEGACY_RANDOM_INCREMENT) & LEGACY_RANDOM_MODULUS_MASK;
+    self.seed.store(nextseed);
+    return (int)(nextseed >> (LEGACY_RANDOM_SOURCE_MODULUS_BITS - value));
 } 
 
 fn double LegacyRandomSource.nextGaussian(LegacyRandomSource* self) @dynamic {
@@ -196,46 +196,51 @@ fn double LegacyRandomSource.nextGaussian(LegacyRandomSource* self) @dynamic {
 }
 
 fn int LegacyRandomSource.nextInt(LegacyRandomSource* self) @dynamic {
-	return self.nextIntBounded();
+	return self.next(32);
 }
 
 <*
 	@require bound > 0
 *>
 fn int LegacyRandomSource.nextIntBounded(LegacyRandomSource* self, int bound = 32) @dynamic {
-	if((bound & bound - 1) == 0) {
-		return bound * self.nextIntBounded(31) >> 31;
+	int r = self.next(31);
+	int m = bound - 1;
+	
+	if ((bound & m) == 0) {
+		return (int)(((long)bound * (long)r) >> 31);
 	} 
 
-	int j;
-	int k;
-
-	do {
-		j = self.next(31);
-		k = j % bound;
-	} while(j - k + (bound - 1) < 0);
-
-	return k;
+	int u = r;
+	int val;
+	
+	// Точный порт логики Java для отсечения смещения (modulo bias)
+	while (true) {
+		val = u % bound;
+		if (u - val + m >= 0) {
+			return val;
+		}
+		u = self.next(31);
+	}
 }
 
 fn long LegacyRandomSource.nextLong(LegacyRandomSource* self) @dynamic {
-	int i = self.nextIntBounded(32);
-	int j = self.nextIntBounded(32);
+	int i = self.next(32);
+	int j = self.next(32);
 	long l = (long)i << 32;
 	return l + (long)j;
 }
 
 fn bool LegacyRandomSource.nextBoolean(LegacyRandomSource* self) @dynamic {
-	return self.nextIntBounded(1) != 0;
+	return self.next(1) != 0;
 }
 
 fn float LegacyRandomSource.nextFloat(LegacyRandomSource* self) @dynamic {
-	return (float)(self.nextIntBounded(24) * BIT_RANDOM_SOURCE_FLOAT_MULTIPLIER);
+	return (float)self.next(24) * BIT_RANDOM_SOURCE_FLOAT_MULTIPLIER;
 }
 
 fn double LegacyRandomSource.nextDouble(LegacyRandomSource* self) @dynamic {
-	int i = self.nextIntBounded(26);
-	int j = self.nextIntBounded(27);
+	int i = self.next(26);
+	int j = self.next(27);
 	long l = ((long)i << 27) + (long)j;
 	return (double)l * BIT_RANDOM_SOURCE_DOUBLE_MULTIPLIER;
 }
