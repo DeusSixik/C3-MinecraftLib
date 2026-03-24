@@ -30,12 +30,12 @@ fn double lerp(double t, double a, double b) @inline {
     return a + t * (b - a);
 }
 
-fn double lerp2(double t, double t2, double a, double b, double c, double d) @inline {
-    return lerp(t2, lerp(t, a, b), lerp(t, c, d));
+fn double lerp2(double d, double e, double f, double g, double h, double i) @inline {
+    return lerp(e, lerp(d, f, g), lerp(d, h, i));
 }
 
-fn double lerp3(double t, double t2, double t3, double a, double b, double c, double d, double e, double f, double g, double h) @inline {
-    return lerp(t3, lerp2(t, t2, a, b, c, d), lerp2(t, t2, e, f, g, h));
+fn double lerp3(double d, double e, double f, double g, double h, double i, double j, double k, double l, double m, double n) @inline {
+    return lerp(f, lerp2(d, e, g, h, i, j), lerp2(d, e, k, l, m, n));
 }
 
 fn double dot(int* grad, double x, double y, double z) @inline {
@@ -50,7 +50,7 @@ struct ImprovedNoise {
 }
 
 fn int ImprovedNoise.getP(ImprovedNoise* self, int i) @inline {
-    return (int) (char)self.p[i & 0xFF];
+    return ((int)self.p[i & 0xFF]) & 0xFF;
 }
 
 fn double gradDot(int i, double x, double y, double z) @inline {
@@ -222,7 +222,7 @@ struct PerlinNoise {
 }
 
 fn double wrap(double d) {
-    return d - (double)math::floor(d / 3.3554432E7 + 0.5) * 3.3554432E7;
+    return d - (double)(long)math::floor(d / 3.3554432E7 + 0.5) * 3.3554432E7;
 }
 
 fn void skipOctave(random::RandomSource randomSource) {
@@ -314,10 +314,6 @@ fn void PerlinNoise.init(PerlinNoise* self, random::RandomSource randomSource, i
             ImprovedNoise* newNoise = mem::alloc(ImprovedNoise);
             newNoise.init(octaveRandom);
             self.noiseLevels[k] = newNoise;
-            
-          
-	        random::LegacyRandomSource* lrs = (random::LegacyRandomSource*)octaveRandom.ptr;
-            lrs.delete();
         }
 
         mem::free(factory.ptr);
@@ -887,17 +883,22 @@ fn void PerlinSimplexNoise.init(PerlinSimplexNoise* self, random::RandomSource r
         
         random::LegacyRandomSource* randomSource2 = mem::alloc(random::LegacyRandomSource);
         randomSource2.init(n);
+
+		random::WorldgenRandom* worldGen = std::core::mem::alloc(WorldgenRandom);
+		worldGen.init(randomSource2);
         
         for (int o = l - 1; o >= 0; o--) {
             if (o < k && containsInt(octaves, l - o)) {
                 SimplexNoise* newNoise = mem::alloc(SimplexNoise);
-                newNoise.init(randomSource2);
+                newNoise.init(worldGen);
                 self.noiseLevels[o] = newNoise;
             } else {
-                randomSource2.consumeCount(262);
+                worldGen.consumeCount(262);
             }
         }
-        mem::free(randomSource2);
+		worldGen.delete();
+		
+        // mem::free(randomSource2);
     }
     
     if (!simplexStored) {

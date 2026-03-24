@@ -3,6 +3,9 @@ module mc_export::random;
 import jni;
 import minecraft::noise;
 import minecraft::random;
+import minecraft::random_support;
+import minecraft::mth;
+import std::io;
 
 fn long create(
 	jni::JNIEnv env, jni::Jobject obj, long seed, int type, bool isDefault
@@ -92,7 +95,29 @@ fn int nextIntDirect(
     jni::JNIEnv env, jni::Jobject obj, long random_ptr
 ) @export("Java_dev_sixik_generator_1accelerator_math_c3_NativeRandom_nextIntDirect") {
     random::RandomWrapper* wrapper = (random::RandomWrapper*)random_ptr;
-    // достаём XoroshiroRandomSource напрямую минуя интерфейс
     random::XoroshiroRandomSource* xoro = (random::XoroshiroRandomSource*)wrapper.random.ptr;
     return xoro.nextInt();
+}
+
+fn void setGlobalXoroshiroSeed(
+	jni::JNIEnv env, jni::Jobject obj, long seed
+) @export("Java_dev_sixik_generator_1accelerator_math_c3_NativeRandom_setGlobalXoroshiroSeed")
+{
+	mth::atomicCompareSet(random_support::SEED_UNIQUIFIER, seed);
+}
+
+fn void getSeed(
+	jni::JNIEnv env, jni::Jobject obj, long random_ptr
+) @export("Java_dev_sixik_generator_1accelerator_math_c3_NativeRandom_printSeed")
+{
+	random::RandomWrapper* wrapper = (random::RandomWrapper*)random_ptr;
+
+	if(wrapper.random.type == random::LegacyRandomSource.typeid) {
+		random::LegacyRandomSource* legacy = (random::LegacyRandomSource*) wrapper.random;
+		std::io::printfn("seed %s", legacy.seed.load());
+	} else {
+		random::XoroshiroRandomSource* xoro = (random::XoroshiroRandomSource*) wrapper.random;
+		std::io::printfn("seedLo %s", xoro.randomNumberGenerator.seedLo);
+		std::io::printfn("seedHi %s", xoro.randomNumberGenerator.seedHi);
+	}
 }

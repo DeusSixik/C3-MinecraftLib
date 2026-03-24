@@ -4,6 +4,8 @@ import jni;
 import minecraft::noise;
 import minecraft::random;
 
+import std;
+
 fn long createNormalNoise(
     jni::JNIEnv env_ptr, jni::Jobject obj,
     long random_ptr, int firstOctave, jni::JdoubleArray amplitudes
@@ -45,4 +47,42 @@ fn void deleteNoise(
 {
 	if (noise_ptr == 0) return; 
     ((noise::NormalNoise*)noise_ptr).delete();
+}
+
+fn long normalNoise_getPerlin(
+	jni::JNIEnv env, jni::Jobject obj, 
+	long noise_ptr, int index
+) @export("Java_dev_sixik_generator_1accelerator_math_c3_NativeNormalNoise_getPerlin")
+{
+	if(index == 0) {
+		return (long) ((noise::NormalNoise*)noise_ptr).first;
+	}
+
+	return (long) ((noise::NormalNoise*)noise_ptr).second;
+}
+
+fn double normalNoise_getMax(
+	jni::JNIEnv env, jni::Jobject obj, 
+	long noise_ptr
+) @export("Java_dev_sixik_generator_1accelerator_math_c3_NativeNormalNoise_getMax")
+{
+	return ((noise::NormalNoise*)noise_ptr).maxValue;
+}
+
+fn void normalNoise_printParams(
+	jni::JNIEnv env, jni::Jobject obj, 
+	long noise_ptr
+) @export("Java_dev_sixik_generator_1accelerator_math_c3_NativeNormalNoise_printParams") 
+{
+	noise::NoiseParameters params = ((noise::NormalNoise*)noise_ptr).parameters;
+
+	double[] array = params.amplitudes;
+
+	std::io::printn("First Octave");
+	std::io::printfn("%s", params.firstOctave);
+
+	std::io::printn("Amplitudes Array");
+	for(int i = 0; i < array.len; i++) {
+		std::io::printfn("%f", array[i]);
+	}
 }

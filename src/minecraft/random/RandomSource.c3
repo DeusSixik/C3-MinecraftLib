@@ -6,7 +6,8 @@ import minecraft::random_support;
 
 enum RandomType : int {
 	LEGACY,
-	XOROSHIRO
+	XOROSHIRO,
+	WORLD
 }
 
 struct RandomWrapper {
@@ -50,6 +51,8 @@ interface RandomSource {
 	fn PositionalRandomFactory forkPositional();
 
 	fn void setSeed(long seed);
+
+	fn int next(int value);
 	
 	fn int nextInt();
 
@@ -90,8 +93,6 @@ const float BIT_RANDOM_SOURCE_FLOAT_MULTIPLIER = 5.9604644775390625E-8F;
 const double BIT_RANDOM_SOURCE_DOUBLE_MULTIPLIER = 1.1102230246251565E-16;
 
 interface BitRandomSource : RandomSource {
-
-	fn int next(int value);
 
 }
 
@@ -213,7 +214,6 @@ fn int LegacyRandomSource.nextIntBounded(LegacyRandomSource* self, int bound = 3
 	int u = r;
 	int val;
 	
-	// Точный порт логики Java для отсечения смещения (modulo bias)
 	while (true) {
 		val = u % bound;
 		if (u - val + m >= 0) {
@@ -341,7 +341,7 @@ fn long Xoroshiro128PlusPlus.nextLong(Xoroshiro128PlusPlus* self) {
 }
 
 const float XOROSHIRO_RANDOM_SOURCE_FLOAT_UNIT = 5.9604645E-8F;
-const float XOROSHIRO_RANDOM_SOURCE_DOUBLE_UNIT = 1.110223E-16;
+const float XOROSHIRO_RANDOM_SOURCE_DOUBLE_UNIT = 1.1102230246251565E-16;
 
 struct XoroshiroRandomSource(RandomSource) {
 	Xoroshiro128PlusPlus* randomNumberGenerator;
@@ -423,6 +423,10 @@ fn double XoroshiroRandomSource.nextGaussian(XoroshiroRandomSource* self) @dynam
 	return self.gaussianSource.nextGaussian();
 }
  
+fn int XoroshiroRandomSource.next(XoroshiroRandomSource* self, int value) @dynamic {
+	return (int)((ulong)self.randomNumberGenerator.nextLong() >> (64 - value));
+}
+
 fn int XoroshiroRandomSource.nextInt(XoroshiroRandomSource* self) @dynamic {
     return (int)self.randomNumberGenerator.nextLong();
 }
@@ -521,4 +525,124 @@ fn RandomSource XoroshiroPositionalRandomFactory.fromSeed(XoroshiroPositionalRan
 	XoroshiroRandomSource* create = std::core::mem::alloc(XoroshiroRandomSource);
 	create.init3(seed ^ self.seedLo, seed ^ self.seedHi);
 	return create;
+}
+
+///////////////////////////////////////////
+// 			WorldgenRandom		         //
+///////////////////////////////////////////
+
+struct WorldgenRandom(BitRandomSource) {
+	RandomSource randomSource;
+	int count;
+}
+
+fn void WorldgenRandom.init(WorldgenRandom* self, RandomSource randomSource) {
+	self.randomSource = randomSource;
+}
+
+fn void WorldgenRandom.delete(WorldgenRandom* self) @dynamic {
+
+	if(self.randomSource != null) {
+		self.randomSource.delete();
+		self.randomSource = null;
+	}
+
+	std::core::mem::free(self);
+}
+
+fn RandomSource WorldgenRandom.fork(WorldgenRandom* self) @dynamic {
+	return self.randomSource.fork();
+}
+
+fn PositionalRandomFactory WorldgenRandom.forkPositional(WorldgenRandom* self) @dynamic {
+	return self.randomSource.forkPositional();
+}
+
+fn int WorldgenRandom.next(WorldgenRandom* self, int value) @dynamic {
+	self.count++;
+
+	if(self.randomSource.type == LegacyRandomSource.typeid) {
+		return self.randomSource.next(value);
+	}
+
+	return (int)((ulong)self.randomSource.nextLong() >> (64 - value));
+} 
+
+fn void WorldgenRandom.setSeed(WorldgenRandom* self, long seed) @dynamic {
+	self.randomSource.setSeed(seed);
+} 
+
+fn double WorldgenRandom.nextGaussian(WorldgenRandom* self) @dynamic {
+	return self.randomSource.nextGaussian();
+}
+
+fn int WorldgenRandom.nextInt(WorldgenRandom* self) @dynamic {
+	return self.next(32);
+}
+
+<*
+	@require bound > 0
+*>
+fn int WorldgenRandom.nextIntBounded(WorldgenRandom* self, int bound = 32) @dynamic {
+	int r = self.next(31);
+	int m = bound - 1;
+	
+	if ((bound & m) == 0) {
+		return (int)(((long)bound * (long)r) >> 31);
+	} 
+
+	int u = r;
+	int val;
+	
+	while (true) {
+		val = u % bound;
+		if (u - val + m >= 0) {
+			return val;
+		}
+		u = self.next(31);
+	}
+}
+
+fn long WorldgenRandom.nextLong(WorldgenRandom* self) @dynamic {
+	int i = self.next(32);
+	int j = self.next(32);
+	long l = (long)i << 32;
+	return l + (long)j;
+}
+
+fn bool WorldgenRandom.nextBoolean(WorldgenRandom* self) @dynamic {
+	return self.next(1) != 0;
+}
+
+fn float WorldgenRandom.nextFloat(WorldgenRandom* self) @dynamic {
+	return (float)self.next(24) * BIT_RANDOM_SOURCE_FLOAT_MULTIPLIER;
+}
+
+fn double WorldgenRandom.nextDouble(WorldgenRandom* self) @dynamic {
+	int i = self.next(26);
+	int j = self.next(27);
+	long l = ((long)i << 27) + (long)j;
+	return (double)l * BIT_RANDOM_SOURCE_DOUBLE_MULTIPLIER;
+}
+
+fn int WorldgenRandom.nextIntBetweenInclusive(WorldgenRandom* self, int from, int to) @dynamic {
+	return self.nextIntBounded(to - from + 1) + from;
+}
+
+<*
+	@require from < to
+*>
+fn int WorldgenRandom.nextInt_2(WorldgenRandom* self, int from, int to) @dynamic {
+	return from + self.nextIntBounded(to - from);
+}
+
+fn double WorldgenRandom.triangle(WorldgenRandom* self, double a, double b) @dynamic {
+	return a + b * (self.nextDouble() - self.nextDouble());
+}
+
+fn void WorldgenRandom.consumeCount(WorldgenRandom* self, int value) @dynamic {
+	for (int j = 0; j < value; j++)
+	{
+		self.nextInt();
+	}
 }
