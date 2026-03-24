@@ -40,6 +40,14 @@ fn double getValue(
 	return ((noise::NormalNoise*)noise_ptr).getValue(x, y, z);
 }
 
+fn double getValue2D(
+	jni::JNIEnv env, jni::Jobject obj, 
+	long noise_ptr, double x, double z
+) @export("Java_dev_sixik_generator_1accelerator_math_c3_NativeNormalNoise_getValue2D")
+{
+	return ((noise::NormalNoise*)noise_ptr).getValue2D(x, z);
+}
+
 fn void deleteNoise(
 	jni::JNIEnv env, jni::Jobject obj,
 	long noise_ptr 

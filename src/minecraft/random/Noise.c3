@@ -655,6 +655,13 @@ fn double[<4>] NormalNoise.getValue4Z(NormalNoise* self, double x, double y, dou
     return (self.first.getValue4Z(x, y, z) + self.second.getValue4Z(x2, y2, z2)) * self.valueFactor;
 }
 
+fn double NormalNoise.getValue2D(NormalNoise* self, double x, double z) {
+    double x2 = x * NORMAL_NOISE_INPUT_FACTOR;
+    double z2 = z * NORMAL_NOISE_INPUT_FACTOR;
+    
+    return (self.first.getValue(x, 0.0, z) + self.second.getValue(x2, 0.0, z2)) * self.valueFactor;
+}
+
 fn double NormalNoise.getValue(NormalNoise* self, double x, double y, double z) {
     double x2 = x * NORMAL_NOISE_INPUT_FACTOR;
     double y2 = y * NORMAL_NOISE_INPUT_FACTOR;

@@ -67,3 +67,48 @@ fn void fillNoiseArrayDirectly(
     
     jni_context.releasePrimitiveArrayCritical(j_double_array, ds, 0);
 }
+
+fn void fillSliceArrayDirectly(
+    jni::JNIEnv env, 
+    jni::Jobject obj, 
+    long noise_ptr, 
+    jni::JdoubleArray j_double_array, 
+    int blockX, 
+    int blockZ, 
+    int cellNoiseMinY, 
+    int cellHeight, 
+    int cellCountY, 
+    double xzScale, 
+    double yScale
+) @export("Java_dev_sixik_generator_1accelerator_math_c3_NativeNoiseChunk_fillSliceArrayDirectly") { // Замени NativeNoiseChunk на имя твоего класса
+    
+    // Броня от крашей
+    if (noise_ptr == 0) return; 
+    if (j_double_array == null) return;
+    
+    jni::Jni jni_context = { .env = env, .vtable = *env };
+    
+    int expected_len = cellCountY + 1;
+    int arr_len = jni_context.getArrayLength(j_double_array);
+    
+    if (expected_len <= 0 || expected_len > arr_len) {
+        return; 
+    }
+
+    bool isCopy = false;
+    double* ds = (double*)jni_context.getPrimitiveArrayCritical(j_double_array, &isCopy);
+    if (ds == null) return; 
+    
+    noise::NormalNoise* noise = (noise::NormalNoise*)noise_ptr;
+    
+    double currentX = (double)blockX * xzScale;
+    double currentZ = (double)blockZ * xzScale;
+
+    for (int i = 0; i < expected_len; i++) {
+        double currentY = (double)((i + cellNoiseMinY) * cellHeight) * yScale;
+        
+        ds[i] = noise.getValue(currentX, currentY, currentZ);
+    }
+    
+    jni_context.releasePrimitiveArrayCritical(j_double_array, ds, 0);
+}
