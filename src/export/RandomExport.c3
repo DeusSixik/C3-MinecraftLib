@@ -7,6 +7,19 @@ import minecraft::random_support;
 import minecraft::mth;
 import std::io;
 
+fn long createXoroshiro(
+	jni::JNIEnv env, jni::Jobject obj, long seedLo, long seedHi
+) @export("Java_dev_sixik_generator_1accelerator_math_c3_NativeRandom_createXoroshiro")
+{
+	random::RandomWrapper* wrapper = std::core::mem::alloc(random::RandomWrapper);
+
+	random::XoroshiroRandomSource* xoroshiro = std::core::mem::alloc(random::XoroshiroRandomSource);
+	xoroshiro.init3(seedLo, seedHi);
+	wrapper.random = xoroshiro;
+
+	return (long) wrapper;
+}
+
 fn long create(
 	jni::JNIEnv env, jni::Jobject obj, long seed, int type, bool isDefault
 ) @export("Java_dev_sixik_generator_1accelerator_math_c3_NativeRandom_create")
