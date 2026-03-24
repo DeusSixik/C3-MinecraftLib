@@ -29,13 +29,8 @@
   // "target": "windows-x64",
   // Targets.
   "targets": {
-    "c3_minecraft_win": {
-      "type": "dynamic-lib",
-      "target": "windows-x64"
-    },
-    "c3_minecraft_linux": {
-      "type": "dynamic-lib",
-      "target": "linux-x64"
+    "c3_minecraft": {
+      "type": "dynamic-lib"
     }
   },
   // Global settings.
