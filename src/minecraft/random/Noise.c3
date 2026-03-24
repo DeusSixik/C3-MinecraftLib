@@ -13,6 +13,13 @@ const int[3][16] GRADIENT = {
     {1, 1, 0}, {0, -1, 1}, {-1, 1, 0}, {0, -1, -1}
 };
 
+const double[64] FLAT_SIMPLEX_GRAD = {
+    1.0, 1.0, 0.0, 0.0, -1.0, 1.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, -1.0, -1.0, 0.0, 0.0,
+    1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, -1.0, 0.0, -1.0, 0.0,
+    0.0, 1.0, 1.0, 0.0, 0.0, -1.0, 1.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, -1.0, -1.0, 0.0,
+    1.0, 1.0, 0.0, 0.0, 0.0, -1.0, 1.0, 0.0, -1.0, 1.0, 0.0, 0.0, 0.0, -1.0, -1.0, 0.0,
+};
+
 fn int fastFloor(double x) @inline {
     int i = (int)x;
     return x < (double)i ? i - 1 : i;
@@ -43,7 +50,7 @@ fn double dot(int* grad, double x, double y, double z) @inline {
 }
 
 struct ImprovedNoise {
-    Byte[256] p;
+    Byte[512] p;
     double xo;
     double yo;
     double zo;
@@ -57,54 +64,93 @@ fn double gradDot(int i, double x, double y, double z) @inline {
     return dot(&GRADIENT[i & 0xF], x, y, z);
 }
 
-fn double ImprovedNoise.sampleAndLerp(ImprovedNoise* self, int i, int j, int k, double d, double e, double f, double g) {
-    int l = self.getP(i);
-    int m = self.getP(i + 1);
-    int n = self.getP(l + j);
-    int o = self.getP(l + j + 1);
-    int p = self.getP(m + j);
-    int q = self.getP(m + j + 1);
+fn double ImprovedNoise.sampleAndLerp(ImprovedNoise* self, int gridX, int gridY, int gridZ, double x, double wy, double z, double y) @inline {
+    Byte* p = &self.p;
 
-    double h = gradDot(self.getP(n + k), d, e, f);
-    double r = gradDot(self.getP(p + k), d - 1.0, e, f);
-    double s = gradDot(self.getP(o + k), d, e - 1.0, f);
-    double t = gradDot(self.getP(q + k), d - 1.0, e - 1.0, f);
-    double u = gradDot(self.getP(n + k + 1), d, e, f - 1.0);
-    double v = gradDot(self.getP(p + k + 1), d - 1.0, e, f - 1.0);
-    double w = gradDot(self.getP(o + k + 1), d, e - 1.0, f - 1.0);
-    double x = gradDot(self.getP(q + k + 1), d - 1.0, e - 1.0, f - 1.0);
+    int x_idx = gridX & 0xFF;
+    int y_idx = gridY & 0xFF;
+    int z_idx = gridZ & 0xFF;
 
-    double y = smoothstep(d);
-    double z = smoothstep(g);
-    double aa = smoothstep(f);
+    int hash_a  = (int)p[x_idx] + y_idx;
+    int hash_b  = (int)p[x_idx + 1] + y_idx;
 
-    return lerp3(y, z, aa, h, r, s, t, u, v, w, x);
+    int hash_aa = (int)p[hash_a] + z_idx;
+    int hash_ab = (int)p[hash_a + 1] + z_idx;
+    int hash_ba = (int)p[hash_b] + z_idx;
+    int hash_bb = (int)p[hash_b + 1] + z_idx;
+
+    int gi000 = ((int)p[hash_aa] & 15) << 2;
+    int gi001 = ((int)p[hash_aa + 1] & 15) << 2;
+    int gi010 = ((int)p[hash_ab] & 15) << 2;
+    int gi011 = ((int)p[hash_ab + 1] & 15) << 2;
+    int gi100 = ((int)p[hash_ba] & 15) << 2;
+    int gi101 = ((int)p[hash_ba + 1] & 15) << 2;
+    int gi110 = ((int)p[hash_bb] & 15) << 2;
+    int gi111 = ((int)p[hash_bb + 1] & 15) << 2;
+
+    double x1 = x - 1.0;
+    double wy1 = wy - 1.0;
+    double z1 = z - 1.0;
+
+    double n000 = FLAT_SIMPLEX_GRAD[gi000] * x + FLAT_SIMPLEX_GRAD[gi000 | 1] * wy + FLAT_SIMPLEX_GRAD[gi000 | 2] * z;
+    double n100 = FLAT_SIMPLEX_GRAD[gi100] * x1 + FLAT_SIMPLEX_GRAD[gi100 | 1] * wy + FLAT_SIMPLEX_GRAD[gi100 | 2] * z;
+    double n010 = FLAT_SIMPLEX_GRAD[gi010] * x + FLAT_SIMPLEX_GRAD[gi010 | 1] * wy1 + FLAT_SIMPLEX_GRAD[gi010 | 2] * z;
+    double n110 = FLAT_SIMPLEX_GRAD[gi110] * x1 + FLAT_SIMPLEX_GRAD[gi110 | 1] * wy1 + FLAT_SIMPLEX_GRAD[gi110 | 2] * z;
+    double n001 = FLAT_SIMPLEX_GRAD[gi001] * x + FLAT_SIMPLEX_GRAD[gi001 | 1] * wy + FLAT_SIMPLEX_GRAD[gi001 | 2] * z1;
+    double n101 = FLAT_SIMPLEX_GRAD[gi101] * x1 + FLAT_SIMPLEX_GRAD[gi101 | 1] * wy + FLAT_SIMPLEX_GRAD[gi101 | 2] * z1;
+    double n011 = FLAT_SIMPLEX_GRAD[gi011] * x + FLAT_SIMPLEX_GRAD[gi011 | 1] * wy1 + FLAT_SIMPLEX_GRAD[gi011 | 2] * z1;
+    double n111 = FLAT_SIMPLEX_GRAD[gi111] * x1 + FLAT_SIMPLEX_GRAD[gi111 | 1] * wy1 + FLAT_SIMPLEX_GRAD[gi111 | 2] * z1;
+
+    double u = x * x * x * (10.0 + x * (x * 6.0 - 15.0));
+    double v = y * y * y * (10.0 + y * (y * 6.0 - 15.0));
+    double w = z * z * z * (10.0 + z * (z * 6.0 - 15.0));
+
+    double lerpX1 = n000 + u * (n100 - n000);
+    double lerpX2 = n010 + u * (n110 - n010);
+    double lerpX3 = n001 + u * (n101 - n001);
+    double lerpX4 = n011 + u * (n111 - n011);
+
+    double lerpY1 = lerpX1 + v * (lerpX2 - lerpX1);
+    double lerpY2 = lerpX3 + v * (lerpX4 - lerpX3);
+
+    return lerpY1 + w * (lerpY2 - lerpY1);
 }
 
-fn double ImprovedNoise.noise(ImprovedNoise* self, double x, double y, double z, double g = 0, double h = 0) {
-    double i = x + self.xo;
-    double j = y + self.yo;
-    double k = z + self.zo;
+fn double ImprovedNoise.noise(ImprovedNoise* self, double x, double y, double z, double yScale = 0.0, double yMax = 0.0) @inline {
+    double inputX = x + self.xo;
+    double inputY = y + self.yo;
+    double inputZ = z + self.zo;
 
-    int l = fastFloor(i);
-    int m = fastFloor(j);
-    int n = fastFloor(k);
+    int gridX = (int)inputX;
+    if (inputX < (double)gridX) gridX--;
 
-    double o = i - (double)l;
-    double p = j - (double)m;
-    double q = k - (double)n;
+    int gridY = (int)inputY;
+    if (inputY < (double)gridY) gridY--;
 
+    int gridZ = (int)inputZ;
+    if (inputZ < (double)gridZ) gridZ--;
 
-	double s = 0;
-	if (g != 0.0) {
-		double r = h >= 0.0 && h < p ? h : p;
-		s = (double)math::floor(r / g + 1.0E-7) * g;
-	}
+    double deltaX = inputX - (double)gridX;
+    double deltaY = inputY - (double)gridY;
+    double deltaZ = inputZ - (double)gridZ;
 
-    return self.sampleAndLerp(l, m, n, o, p - s, q, p);
+    double weirdDeltaY;
+    if (yScale != 0.0) {
+        double range = (yMax >= 0.0 && yMax < deltaY) ? yMax : deltaY;
+        double scaled = range / yScale + 1.0E-7;
+        
+        int scaledFloor = (int)scaled;
+        if (scaled < (double)scaledFloor) scaledFloor--;
+
+        weirdDeltaY = deltaY - ((double)scaledFloor * yScale);
+    } else {
+        weirdDeltaY = deltaY;
+    }
+
+    return self.sampleAndLerp(gridX, gridY, gridZ, deltaX, weirdDeltaY, deltaZ, deltaY);
 }
 
-fn double ImprovedNoise.sampleWithDerivative(ImprovedNoise* self, int i, int j, int k, double d, double e, double f, double* ds) {
+fn double ImprovedNoise.sampleWithDerivative(ImprovedNoise* self, int i, int j, int k, double d, double e, double f, double* ds) @inline {
     int l = self.getP(i);
     int m = self.getP(i + 1);
     int n = self.getP(l + j);
@@ -162,7 +208,7 @@ fn double ImprovedNoise.sampleWithDerivative(ImprovedNoise* self, int i, int j, 
     return lerp3(af, ag, ah, g, h, z, aa, ab, ac, ad, ae);
 }
 
-fn double ImprovedNoise.noiseWithDerivative(ImprovedNoise* self, double x, double y, double z, double* ds) {
+fn double ImprovedNoise.noiseWithDerivative(ImprovedNoise* self, double x, double y, double z, double* ds) @inline {
     double g = x + self.xo;
     double h = y + self.yo;
     double i = z + self.zo;
@@ -194,6 +240,10 @@ fn void ImprovedNoise.init(ImprovedNoise* self, random::RandomSource seed) {
         self.p[i] = self.p[i + j];
         self.p[i + j] = b;
     }
+
+	for (int i = 0; i < 256; i++) {
+        self.p[i + 256] = self.p[i];
+    }
 }
 
 fn void ImprovedNoise.delete(ImprovedNoise* self) {
@@ -214,14 +264,15 @@ const int ROUND_OFF = 0x2000000;
 
 struct PerlinNoise {
 	ImprovedNoise*[] noiseLevels;
-	double[] amplitudes;
-	int firstOctave;
-	double lowestFreqValueFactor;
-	double lowestFreqInputFactor;
-	double maxValue;
+    ImprovedNoise* pool;
+    double[] amplitudes;
+    int firstOctave;
+    double lowestFreqValueFactor;
+    double lowestFreqInputFactor;
+    double maxValue;
 }
 
-fn double wrap(double d) {
+fn double wrap(double d) @inline {
     return d - (double)(long)math::floor(d / 3.3554432E7 + 0.5) * 3.3554432E7;
 }
 
@@ -287,18 +338,23 @@ fn double PerlinNoise.getValueFull(PerlinNoise* self, double d, double e, double
 
 fn void PerlinNoise.init(PerlinNoise* self, random::RandomSource randomSource, int firstOctave, double[] amplitudes, bool usePositional = true) {
     self.firstOctave = firstOctave;
-    
     self.amplitudes = mem::new_array(double, amplitudes.len);
     mem::copy(self.amplitudes.ptr, amplitudes.ptr, amplitudes.len * double.sizeof);
     
     int len = self.amplitudes.len;
     int j = -self.firstOctave;
-    
     self.noiseLevels = mem::new_array(ImprovedNoise*, len);
+    
+    int activeOctaves = 0;
+    for (int k = 0; k < len; k++) {
+        if (self.amplitudes[k] != 0.0) activeOctaves++;
+    }
+    
+    self.pool = mem::new_array(ImprovedNoise, activeOctaves);
+    int poolIdx = 0;
     
     if (usePositional) {
         random::PositionalRandomFactory factory = randomSource.forkPositional();
-        
         for (int k = 0; k < len; k++) {
             if (self.amplitudes[k] == 0.0) {
                 self.noiseLevels[k] = null;
@@ -311,28 +367,34 @@ fn void PerlinNoise.init(PerlinNoise* self, random::RandomSource randomSource, i
             
             random::RandomSource octaveRandom = factory.fromHashOf((String)hashNameSlice);
             
-            ImprovedNoise* newNoise = mem::alloc(ImprovedNoise);
+        
+            ImprovedNoise* newNoise = &self.pool[poolIdx++];
             newNoise.init(octaveRandom);
             self.noiseLevels[k] = newNoise;
         }
-
         mem::free(factory.ptr);
         
     } else {
-        ImprovedNoise* baseNoise = mem::alloc(ImprovedNoise);
+        ImprovedNoise dummyNoise; 
+        ImprovedNoise* baseNoise;
+        
+        if (j >= 0 && j < len && self.amplitudes[j] != 0.0) {
+            baseNoise = &self.pool[poolIdx++]; 
+        } else {
+            baseNoise = &dummyNoise;
+        }
+        
         baseNoise.init(randomSource);
         
         if (j >= 0 && j < len && self.amplitudes[j] != 0.0) {
             self.noiseLevels[j] = baseNoise;
-        } else {
-            mem::free(baseNoise); 
         }
         
         for (int k = j - 1; k >= 0; k--) {
             if (k < len) {
                 double e = self.amplitudes[k];
                 if (e != 0.0) {
-                    ImprovedNoise* newNoise = mem::alloc(ImprovedNoise);
+                    ImprovedNoise* newNoise = &self.pool[poolIdx++];
                     newNoise.init(randomSource);
                     self.noiseLevels[k] = newNoise;
                 } else {
@@ -344,16 +406,15 @@ fn void PerlinNoise.init(PerlinNoise* self, random::RandomSource randomSource, i
         }
     }
     
-    self.lowestFreqInputFactor = math::pow(2.0, (double)-j);
-    self.lowestFreqValueFactor = math::pow(2.0, (double)(len - 1)) / (math::pow(2.0, (double)len) - 1.0);
+    self.lowestFreqInputFactor = j >= 0 ? (1.0 / (double)(1L << j)) : (double)(1L << -j);
+    self.lowestFreqValueFactor = (double)(1L << (len - 1)) / (double)((1L << len) - 1);
+    
     self.maxValue = self.edgeValue(2.0);
 }
 
 fn void PerlinNoise.delete(PerlinNoise* self) {
-    for (int i = 0; i < self.noiseLevels.len; i++) {
-        if (self.noiseLevels[i] != null) {
-            self.noiseLevels[i].delete();
-        }
+	if (self.pool != null) {
+        mem::free(self.pool); // Уничтожаем весь пул октав разом
     }
     mem::free(self.noiseLevels.ptr);
     mem::free(self.amplitudes.ptr);
@@ -626,21 +687,34 @@ fn double BlendedNoise.compute(BlendedNoise* self, int blockX, int blockY, int b
     double l = 0.0;
     double m = 0.0;
     double n = 0.0;
-    double o = 1.0;
     
+    double o = 1.0;
+    double inv_o = 1.0;
+    
+    ImprovedNoise*[] mainNoises = self.mainNoise.noiseLevels;
+    int mainLen = mainNoises.len;
+
     for (int p = 0; p < 8; p++) {
-        ImprovedNoise* improvedNoise = self.mainNoise.getOctaveNoise(p);
+        ImprovedNoise* improvedNoise = mainNoises[mainLen - 1 - p];
         if (improvedNoise != null) {
-            n += improvedNoise.noise(wrap(g * o), wrap(h * o), wrap(i * o), k * o, h * o) / o;
+            n += improvedNoise.noise(wrap(g * o), wrap(h * o), wrap(i * o), k * o, h * o) * inv_o;
         }
-        o /= 2.0;
+        o *= 0.5;
+        inv_o *= 2.0;
     }
     
-    double q = (n / 10.0 + 1.0) / 2.0;
+    double q = (n / 10.0 + 1.0) * 0.5;
     bool bl2 = q >= 1.0;
     bool bl3 = q <= 0.0;
-    o = 1.0;
     
+    o = 1.0;
+    inv_o = 1.0;
+    
+    ImprovedNoise*[] minNoises = self.minLimitNoise.noiseLevels;
+    ImprovedNoise*[] maxNoises = self.maxLimitNoise.noiseLevels;
+    int minLen = minNoises.len;
+    int maxLen = maxNoises.len;
+
     for (int r = 0; r < 16; r++) {
         double s = wrap(d * o);
         double t = wrap(e * o);
@@ -648,19 +722,20 @@ fn double BlendedNoise.compute(BlendedNoise* self, int blockX, int blockY, int b
         double v = j * o;
         
         if (!bl2) {
-            ImprovedNoise* improvedNoise2 = self.minLimitNoise.getOctaveNoise(r);
+            ImprovedNoise* improvedNoise2 = minNoises[minLen - 1 - r];
             if (improvedNoise2 != null) {
-                l += improvedNoise2.noise(s, t, u, v, e * o) / o;
+                l += improvedNoise2.noise(s, t, u, v, e * o) * inv_o;
             }
         }
         
         if (!bl3) {
-            ImprovedNoise* improvedNoise2 = self.maxLimitNoise.getOctaveNoise(r);
+            ImprovedNoise* improvedNoise2 = maxNoises[maxLen - 1 - r];
             if (improvedNoise2 != null) {
-                m += improvedNoise2.noise(s, t, u, v, e * o) / o;
+                m += improvedNoise2.noise(s, t, u, v, e * o) * inv_o;
             }
         }
-        o /= 2.0;
+        o *= 0.5;
+        inv_o *= 2.0;
     }
     
     return clampedLerp(l / 512.0, m / 512.0, q) / 128.0;
@@ -676,7 +751,8 @@ const double SIMPLEX_F2 = 0.3660254037844386;
 const double SIMPLEX_G2 = 0.21132486540518713;   
 
 struct SimplexNoise {
-    int[512] p;
+    char[512] p;
+	char[512] p_mod12;
     double xo;
     double yo;
     double zo;
@@ -688,14 +764,23 @@ fn void SimplexNoise.init(SimplexNoise* self, random::RandomSource seed) {
     self.zo = seed.nextDouble() * 256.0;
     
     for (int i = 0; i < 256; i++) {
-        self.p[i] = i;
+        self.p[i] = (char)i;
     }
     
     for (int i = 0; i < 256; i++) {
         int j = seed.nextIntBounded(256 - i);
-        int k = self.p[i];
+        char k = self.p[i];
         self.p[i] = self.p[j + i];
         self.p[j + i] = k;
+    }
+
+    
+    for (int i = 0; i < 256; i++) {
+        self.p[i + 256] = self.p[i];
+        
+        char mod12 = self.p[i] % 12;
+        self.p_mod12[i] = mod12;
+        self.p_mod12[i + 256] = mod12;
     }
 }
 
@@ -726,15 +811,15 @@ fn double SimplexNoise.getValue2D(SimplexNoise* self, double d, double e) {
     double h = (double)i - g;
     double l = d - h;
     
-    double k = (double)j - g;
+    double k = (double)j - g; 
     double m = e - k;
     
-    int n;
-    int o;
-    if (l > m) {
+    int n; 
+    int o; 
+    if (l > m) { 
         n = 1;
         o = 0;
-    } else {
+    } else { 
         n = 0;
         o = 1;
     }
@@ -747,14 +832,16 @@ fn double SimplexNoise.getValue2D(SimplexNoise* self, double d, double e) {
     int t = i & 0xFF;
     int u = j & 0xFF;
     
-    int v = self.getP(t + self.getP(u)) % 12;
-    int w = self.getP(t + n + self.getP(u + o)) % 12;
-    int x = self.getP(t + 1 + self.getP(u + 1)) % 12;
+    char* p_arr = &self.p;
+    char* p_mod = &self.p_mod12;
+
+    int v = p_mod[t + p_arr[u]];
+    int w = p_mod[t + n + p_arr[u + o]];
+    int x = p_mod[t + 1 + p_arr[u + 1]];
     
-    double y = self.getCornerNoise3D(v, l, m, 0.0, 0.5);
-    double z = self.getCornerNoise3D(w, p, q, 0.0, 0.5);
+    double y = self.getCornerNoise3D(v, l, m, 0.0, 0.5); 
+    double z = self.getCornerNoise3D(w, p, q, 0.0, 0.5); 
     double aa = self.getCornerNoise3D(x, r, s, 0.0, 0.5);
-    
     return 70.0 * (y + z + aa);
 }
 
@@ -810,11 +897,14 @@ fn double SimplexNoise.getValue3D(SimplexNoise* self, double d, double e, double
     int ai = i & 0xFF;
     int aj = j & 0xFF;
     int ak = k & 0xFF;
-    
-    int al = self.getP(ai + self.getP(aj + self.getP(ak))) % 12;
-    int am = self.getP(ai + t + self.getP(aj + u + self.getP(ak + v))) % 12;
-    int an = self.getP(ai + w + self.getP(aj + x + self.getP(ak + y))) % 12;
-    int ao = self.getP(ai + 1 + self.getP(aj + 1 + self.getP(ak + 1))) % 12;
+
+    char* p2 = &self.p;
+    char* p_mod = &self.p_mod12;
+
+    int al = p_mod[ai + p2[aj + p2[ak]]];
+    int am = p_mod[ai + t + p2[aj + u + p2[ak + v]]];
+    int an = p_mod[ai + w + p2[aj + x + p2[ak + y]]];
+    int ao = p_mod[ai + 1 + p2[aj + 1 + p2[ak + 1]]];
     
     double ap = self.getCornerNoise3D(al, q, r, s, 0.6);
     double aq = self.getCornerNoise3D(am, z, aa, ab, 0.6);
@@ -931,7 +1021,7 @@ fn double PerlinSimplexNoise.getValue(PerlinSimplexNoise* self, double d, double
             
             f += simplexNoise.getValue2D(x, y) * h;
         }
-        g /= 2.0;
+        g *= 0.5;
         h *= 2.0;
     }
     return f;
