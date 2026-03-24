@@ -42,7 +42,7 @@
   "safe": false,
   "single-module": true,
   "x86cpu": "native",
-  "x86vec": "avx512",
+  "x86vec": "avx",
   // Optimization: "O0", "O1", "O2", "O3", "O4", "O5", "Os", "Oz".
   "opt": "O5"
   // See resources/examples/project_all_settings.json and 'c3c --list-project-properties' to see more properties.

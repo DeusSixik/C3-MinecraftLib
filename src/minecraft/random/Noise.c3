@@ -320,18 +320,23 @@ fn double PerlinNoise.getValueFull(PerlinNoise* self, double d, double e, double
     double j = self.lowestFreqInputFactor;
     double k = self.lowestFreqValueFactor;
     
-    for (int l = 0; l < self.noiseLevels.len; l++) {
-        ImprovedNoise* improvedNoise = self.noiseLevels[l];
+    ImprovedNoise*[] noises = self.noiseLevels;
+    int len = noises.len;
+
+    for (int l = 0; l < len; l++) {
+        ImprovedNoise* improvedNoise = noises[l];
+        
         if (improvedNoise != null) {
             double wrap_d = wrap(d * j);
-            double wrap_e = use_yo ? -improvedNoise.yo :wrap(e * j);
+            double wrap_e = use_yo ? -improvedNoise.yo : wrap(e * j);
             double wrap_f = wrap(f * j);
-            double m = improvedNoise.noise(wrap_d, wrap_e, wrap_f, g * j, h * j); 
             
+            double m = improvedNoise.noise(wrap_d, wrap_e, wrap_f, g * j, h * j); 
             i += self.amplitudes[l] * m * k;
         }
+        
         j *= 2.0;
-        k /= 2.0;
+        k *= 0.5;
     }
     return i;
 }
