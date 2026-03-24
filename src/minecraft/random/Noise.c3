@@ -224,6 +224,111 @@ fn double ImprovedNoise.noiseWithDerivative(ImprovedNoise* self, double x, doubl
     return self.sampleWithDerivative(j, k, l, m, n, o, ds);
 }
 
+fn double[<4>] ImprovedNoise.noise4Z(ImprovedNoise* self, double x, double y, double[<4>] z, double yScale = 0.0, double yMax = 0.0) {
+    double inputX = x + self.xo;
+    double inputY = y + self.yo;
+    
+    int gridX = (int)inputX; if (inputX < (double)gridX) gridX--;
+    int gridY = (int)inputY; if (inputY < (double)gridY) gridY--;
+    
+    double deltaX = inputX - (double)gridX;
+    double deltaY = inputY - (double)gridY;
+    
+    double u = deltaX * deltaX * deltaX * (deltaX * (deltaX * 6.0 - 15.0) + 10.0);
+    double v = deltaY * deltaY * deltaY * (deltaY * (deltaY * 6.0 - 15.0) + 10.0);
+    
+    char* p = &self.p;
+    int x_idx = gridX & 0xFF;
+    int y_idx = gridY & 0xFF;
+    
+    int hash_a  = (int)p[x_idx] + y_idx;
+    int hash_b  = (int)p[x_idx + 1] + y_idx;
+    
+    int p_a = (int)p[hash_a];
+    int p_a1 = (int)p[hash_a + 1];
+    int p_b = (int)p[hash_b];
+    int p_b1 = (int)p[hash_b + 1];
+
+    double[<4>] inputZ = z + self.zo;
+    
+    int[<4>] gridZ;
+    double[<4>] deltaZ;
+    double[<4>] w;
+    
+    double[<4>] lerpY1;
+    double[<4>] lerpY2;
+    
+    for(int i = 0; i < 4; i++) {
+        gridZ[i] = (int)inputZ[i];
+        if (inputZ[i] < (double)gridZ[i]) gridZ[i]--;
+        
+        deltaZ[i] = inputZ[i] - (double)gridZ[i];
+        w[i] = deltaZ[i] * deltaZ[i] * deltaZ[i] * (deltaZ[i] * (deltaZ[i] * 6.0 - 15.0) + 10.0);
+        
+        int z_idx = gridZ[i] & 0xFF;
+        
+        int gi000 = ((int)p[p_a + z_idx] & 15) << 2;
+        int gi001 = ((int)p[p_a + z_idx + 1] & 15) << 2;
+        int gi010 = ((int)p[p_a1 + z_idx] & 15) << 2;
+        int gi011 = ((int)p[p_a1 + z_idx + 1] & 15) << 2;
+        int gi100 = ((int)p[p_b + z_idx] & 15) << 2;
+        int gi101 = ((int)p[p_b + z_idx + 1] & 15) << 2;
+        int gi110 = ((int)p[p_b1 + z_idx] & 15) << 2;
+        int gi111 = ((int)p[p_b1 + z_idx + 1] & 15) << 2;
+
+        double z1 = deltaZ[i] - 1.0;
+        double x1 = deltaX - 1.0; 
+        double wy1 = deltaY - 1.0; 
+
+        double n000 = FLAT_SIMPLEX_GRAD[gi000] * deltaX + FLAT_SIMPLEX_GRAD[gi000 | 1] * deltaY + FLAT_SIMPLEX_GRAD[gi000 | 2] * deltaZ[i];
+        double n100 = FLAT_SIMPLEX_GRAD[gi100] * x1 + FLAT_SIMPLEX_GRAD[gi100 | 1] * deltaY + FLAT_SIMPLEX_GRAD[gi100 | 2] * deltaZ[i];
+        double n010 = FLAT_SIMPLEX_GRAD[gi010] * deltaX + FLAT_SIMPLEX_GRAD[gi010 | 1] * wy1 + FLAT_SIMPLEX_GRAD[gi010 | 2] * deltaZ[i];
+        double n110 = FLAT_SIMPLEX_GRAD[gi110] * x1 + FLAT_SIMPLEX_GRAD[gi110 | 1] * wy1 + FLAT_SIMPLEX_GRAD[gi110 | 2] * deltaZ[i];
+        double n001 = FLAT_SIMPLEX_GRAD[gi001] * deltaX + FLAT_SIMPLEX_GRAD[gi001 | 1] * deltaY + FLAT_SIMPLEX_GRAD[gi001 | 2] * z1;
+        double n101 = FLAT_SIMPLEX_GRAD[gi101] * x1 + FLAT_SIMPLEX_GRAD[gi101 | 1] * deltaY + FLAT_SIMPLEX_GRAD[gi101 | 2] * z1;
+        double n011 = FLAT_SIMPLEX_GRAD[gi011] * deltaX + FLAT_SIMPLEX_GRAD[gi011 | 1] * wy1 + FLAT_SIMPLEX_GRAD[gi011 | 2] * z1;
+        double n111 = FLAT_SIMPLEX_GRAD[gi111] * x1 + FLAT_SIMPLEX_GRAD[gi111 | 1] * wy1 + FLAT_SIMPLEX_GRAD[gi111 | 2] * z1;
+
+        double lerpX1 = n000 + u * (n100 - n000);
+        double lerpX2 = n010 + u * (n110 - n010);
+        double lerpX3 = n001 + u * (n101 - n001);
+        double lerpX4 = n011 + u * (n111 - n011);
+
+        lerpY1[i] = lerpX1 + v * (lerpX2 - lerpX1);
+        lerpY2[i] = lerpX3 + v * (lerpX4 - lerpX3);
+    }
+    
+    return lerpY1 + w * (lerpY2 - lerpY1);
+}
+
+fn double[<4>] PerlinNoise.getValue4Z(PerlinNoise* self, double d, double e, double[<4>] f) {
+    return self.getValueFull4Z(d, e, f, 0.0, 0.0, false);
+}
+
+fn double[<4>] PerlinNoise.getValueFull4Z(PerlinNoise* self, double d, double e, double[<4>] f, double g, double h, bool use_yo) {
+    double[<4>] i = {0.0, 0.0, 0.0, 0.0};
+    double j = self.lowestFreqInputFactor;
+    double k = self.lowestFreqValueFactor;
+    
+    ImprovedNoise*[] noises = self.noiseLevels;
+    
+    for (int l = 0; l < noises.len; l++) {
+        ImprovedNoise* improvedNoise = noises[l];
+        if (improvedNoise != null) {
+            double wrap_d = wrap(d * j);
+            double wrap_e = use_yo ? -improvedNoise.yo : wrap(e * j);
+            
+            double[<4>] wrap_f = f * j; 
+            
+            double[<4>] m = improvedNoise.noise4Z(wrap_d, wrap_e, wrap_f, g * j, h * j); 
+            i += m * (self.amplitudes[l] * k);
+        }
+        j *= 2.0;
+        k *= 0.5;
+    }
+    return i;
+}
+
 fn void ImprovedNoise.init(ImprovedNoise* self, random::RandomSource seed) {
     self.xo = seed.nextDouble() * 256.0;
     self.yo = seed.nextDouble() * 256.0;
@@ -539,6 +644,15 @@ struct NormalNoise {
 
 fn double expectedDeviation(int i) @inline {
     return 0.1 * (1.0 + 1.0 / (double)(i + 1));
+}
+
+fn double[<4>] NormalNoise.getValue4Z(NormalNoise* self, double x, double y, double[<4>] z) {
+    double x2 = x * NORMAL_NOISE_INPUT_FACTOR;
+    double y2 = y * NORMAL_NOISE_INPUT_FACTOR;
+    
+    double[<4>] z2 = z * NORMAL_NOISE_INPUT_FACTOR; 
+    
+    return (self.first.getValue4Z(x, y, z) + self.second.getValue4Z(x2, y2, z2)) * self.valueFactor;
 }
 
 fn double NormalNoise.getValue(NormalNoise* self, double x, double y, double z) {

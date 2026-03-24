@@ -46,9 +46,21 @@ fn void fillNoiseArrayDirectly(
         for (int j = 0; j < cellWidth; ++j) {
             double currentX = base_x + (double)j * xzScale;
             
-            for (int k = 0; k < cellWidth; ++k) {
-                double currentZ = base_z + (double)k * xzScale;
-                ds[arrayIndex++] = noise.getValue(currentX, currentY, currentZ);
+            for (int k = 0; k < cellWidth; k += 4) {
+                
+                double[<4>] currentZ = {
+                    base_z + (double)k * xzScale,
+                    base_z + (double)(k + 1) * xzScale,
+                    base_z + (double)(k + 2) * xzScale,
+                    base_z + (double)(k + 3) * xzScale
+                };
+                
+                double[<4>] results = noise.getValue4Z(currentX, currentY, currentZ);
+                
+                ds[arrayIndex++] = results[0];
+                ds[arrayIndex++] = results[1];
+                ds[arrayIndex++] = results[2];
+                ds[arrayIndex++] = results[3];
             }
         }
     }
